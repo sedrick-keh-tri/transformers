@@ -16,14 +16,16 @@
  Processing saving/loading class for common processors.
 """
 
+import copy
+import json
 import os
 import warnings
 from pathlib import Path
-from typing import Optional, Union
+from typing import Any, Dict, Optional, Union
 
 from .dynamic_module_utils import custom_object_save
 from .tokenization_utils_base import PreTrainedTokenizerBase
-from .utils import PushToHubMixin, copy_func, direct_transformers_import, logging
+from .utils import PROCESSOR_NAME, PushToHubMixin, copy_func, direct_transformers_import, logging
 
 
 logger = logging.get_logger(__name__)
@@ -84,6 +86,46 @@ class ProcessorMixin(PushToHubMixin):
                 )
 
             setattr(self, attribute_name, arg)
+
+    def to_dict(self) -> Dict[str, Any]:
+        """
+        Serializes this instance to a Python dictionary.
+
+        Returns:
+            `Dict[str, Any]`: Dictionary of all the attributes that make up this image processor instance.
+        """
+        output = copy.deepcopy(self.__dict__)
+        output["image_processor_type"] = self.__class__.__name__
+
+        return output
+
+    def to_json_string(self) -> str:
+        """
+        Serializes this instance to a JSON string.
+
+        Returns:
+            `str`: String containing all the attributes that make up this feature_extractor instance in JSON format.
+        """
+        dictionary = self.to_dict()
+
+        # make sure private name "_processor_class" is correctly
+        # saved as "processor_class"
+        _processor_class = dictionary.pop("_processor_class", None)
+        if _processor_class is not None:
+            dictionary["processor_class"] = _processor_class
+
+        return json.dumps(dictionary, indent=2, sort_keys=True) + "\n"
+
+    def to_json_file(self, json_file_path: Union[str, os.PathLike]):
+        """
+        Save this instance to a JSON file.
+
+        Args:
+            json_file_path (`str` or `os.PathLike`):
+                Path to the JSON file in which this image_processor instance's parameters will be saved.
+        """
+        with open(json_file_path, "w", encoding="utf-8") as writer:
+            writer.write(self.to_json_string())
 
     def __repr__(self):
         attributes_repr = [f"- {name}: {repr(getattr(self, name))}" for name in self.attributes]
@@ -155,6 +197,12 @@ class ProcessorMixin(PushToHubMixin):
                 attribute = getattr(self, attribute_name)
                 if isinstance(attribute, PreTrainedTokenizerBase):
                     del attribute.init_kwargs["auto_map"]
+
+        # If we save using the predefined names, we can load using `from_pretrained`
+        output_processor_file = os.path.join(save_directory, PROCESSOR_NAME)
+
+        self.to_json_file(output_processor_file)
+        logger.info(f"processor saved in {output_processor_file}")
 
         if push_to_hub:
             self._upload_modified_files(
