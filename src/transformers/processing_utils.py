@@ -95,7 +95,14 @@ class ProcessorMixin(PushToHubMixin):
             `Dict[str, Any]`: Dictionary of all the attributes that make up this image processor instance.
         """
         output = copy.deepcopy(self.__dict__)
-        output["image_processor_type"] = self.__class__.__name__
+        output["processor_type"] = self.__class__.__name__
+
+        if "tokenizer" in output:
+            del output["tokenizer"]
+        if "image_processor" in output:
+            del output["image_processor"]
+        if "feature_extractor" in output:
+            del output["feature_extractor"]
 
         return output
 
