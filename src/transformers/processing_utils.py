@@ -454,8 +454,11 @@ class ProcessorMixin(PushToHubMixin):
         # TODO: How to deal with this better and safer
         try:
             processor_dict, kwargs = cls.get_processor_dict(pretrained_model_name_or_path, **kwargs)
-        except EntryNotFoundError:
-            processor_dict, kwargs = {}, {}
+        except EnvironmentError as e:
+            if "does not appear to have a file named processor_config.json." in str(e):
+                processor_dict, kwargs = {}, {}
+            else:
+                raise
 
         return cls.from_args_and_dict(args, processor_dict, **kwargs)
 
