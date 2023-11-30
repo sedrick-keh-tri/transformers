@@ -24,8 +24,6 @@ import warnings
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
-from huggingface_hub.utils import EntryNotFoundError
-
 from .dynamic_module_utils import custom_object_save
 from .tokenization_utils_base import PreTrainedTokenizerBase
 from .utils import (
@@ -117,9 +115,28 @@ class ProcessorMixin(PushToHubMixin):
             del output["image_processor"]
         if "feature_extractor" in output:
             del output["feature_extractor"]
+
+        # TODO: deal the following with a generic approach
+
         # Some old processor class (for example, `Wav2Vec2Processor`) have this attribute
         if "current_processor" in output:
             del output["current_processor"]
+
+        # For `MgpstrProcessor`
+        if "bpe_tokenizer" in output:
+            del output["bpe_tokenizer"]
+        if "wp_tokenizer" in output:
+            del output["wp_tokenizer"]
+
+        # For `InstructBlipProcessor`
+        # TODO: update custom `from_pretrained`
+        if "qformer_tokenizer" in output:
+            del output["qformer_tokenizer"]
+
+        # For `Wav2Vec2ProcessorWithLM`
+        # TODO: update custom `from_pretrained`
+        if "decoder" in output:
+            del output["decoder"]
 
         return output
 
