@@ -20,6 +20,7 @@ import copy
 import inspect
 import json
 import os
+import warnings
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple, Union
 
@@ -156,12 +157,6 @@ class ProcessorMixin(PushToHubMixin):
         """
         dictionary = self.to_dict()
 
-        # make sure private name "_processor_class" is correctly
-        # saved as "processor_class"
-        _processor_class = dictionary.pop("_processor_class", None)
-        if _processor_class is not None:
-            dictionary["processor_class"] = _processor_class
-
         return json.dumps(dictionary, indent=2, sort_keys=True) + "\n"
 
     def to_json_file(self, json_file_path: Union[str, os.PathLike]):
@@ -204,6 +199,19 @@ class ProcessorMixin(PushToHubMixin):
             kwargs (`Dict[str, Any]`, *optional*):
                 Additional key word arguments passed along to the [`~utils.PushToHubMixin.push_to_hub`] method.
         """
+        use_auth_token = kwargs.pop("use_auth_token", None)
+
+        if use_auth_token is not None:
+            warnings.warn(
+                "The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.",
+                FutureWarning,
+            )
+            if kwargs.get("token", None) is not None:
+                raise ValueError(
+                    "`token` and `use_auth_token` are both specified. Please set only the argument `token`."
+                )
+            kwargs["token"] = use_auth_token
+
         os.makedirs(save_directory, exist_ok=True)
 
         if push_to_hub:
@@ -435,7 +443,21 @@ class ProcessorMixin(PushToHubMixin):
         kwargs["force_download"] = force_download
         kwargs["local_files_only"] = local_files_only
         kwargs["revision"] = revision
-        kwargs["token"] = token
+
+        use_auth_token = kwargs.pop("use_auth_token", None)
+        if use_auth_token is not None:
+            warnings.warn(
+                "The `use_auth_token` argument is deprecated and will be removed in v5 of Transformers. Please use `token` instead.",
+                FutureWarning,
+            )
+            if token is not None:
+                raise ValueError(
+                    "`token` and `use_auth_token` are both specified. Please set only the argument `token`."
+                )
+            token = use_auth_token
+
+        if token is not None:
+            kwargs["token"] = token
 
         args = cls._get_arguments_from_pretrained(pretrained_model_name_or_path, **kwargs)
 
