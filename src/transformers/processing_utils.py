@@ -107,6 +107,12 @@ class ProcessorMixin(PushToHubMixin):
             `Dict[str, Any]`: Dictionary of all the attributes that make up this processor instance.
         """
         output = copy.deepcopy(self.__dict__)
+
+        # Get the kwargs in `__init__`.
+        sig = inspect.signature(self.__init__)
+        # Only save the attributes that are presented in the kwargs of `__init__`.
+        output = {k: v for k, v in output.items() if k in sig.parameters and k not in self.__class__.attributes}
+
         output["processor_type"] = self.__class__.__name__
 
         if "tokenizer" in output:
@@ -116,7 +122,7 @@ class ProcessorMixin(PushToHubMixin):
         if "feature_extractor" in output:
             del output["feature_extractor"]
 
-        # TODO: deal the following with a generic approach
+        # TODO: deal the following with a generic approach - by checking the types of the values.
 
         # Some old processor class (for example, `Wav2Vec2Processor`) have this attribute
         if "current_processor" in output:
@@ -389,12 +395,12 @@ class ProcessorMixin(PushToHubMixin):
         processor_dict = processor_dict.copy()
         return_unused_kwargs = kwargs.pop("return_unused_kwargs", False)
 
-        # Get the kwargs in `__init__`.
-        # TODO: We should only save the attributes that are presented in the kwargs of `__init__`.
-        sig = inspect.signature(cls.__init__)
-        _processor_dict = {k: v for k, v in processor_dict.items() if k in sig.parameters and k not in cls.attributes}
+        # Unlike image processors or feature extractors whose `__init__` accept `kwargs`, processor don't have `kwargs`.
+        # We have to pop up some unused (but specific) arguments to make it work.
+        if "processor_type" in processor_dict:
+            del processor_dict["processor_type"]
 
-        processor = cls(*args, **_processor_dict)
+        processor = cls(*args, **processor_dict)
 
         # Update processor with kwargs if needed
         to_remove = []
@@ -473,7 +479,9 @@ class ProcessorMixin(PushToHubMixin):
 
         args = cls._get_arguments_from_pretrained(pretrained_model_name_or_path, **kwargs)
 
-        # TODO: How to deal with this better and safer
+        # Existing processors on the Hub don't have `processor_config.json`, but we need to keep `from_pretrained` work.
+        # This is not ideal (for models added in the future) as it might hide some bug/error silently.
+        # TODO: How to deal with this better and safer. Can we use timestamp as a condition to determine this?
         try:
             processor_dict, kwargs = cls.get_processor_dict(pretrained_model_name_or_path, **kwargs)
         except EnvironmentError as e:
