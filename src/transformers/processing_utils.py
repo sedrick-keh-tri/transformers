@@ -104,7 +104,7 @@ class ProcessorMixin(PushToHubMixin):
         Serializes this instance to a Python dictionary.
 
         Returns:
-            `Dict[str, Any]`: Dictionary of all the attributes that make up this image processor instance.
+            `Dict[str, Any]`: Dictionary of all the attributes that make up this processor instance.
         """
         output = copy.deepcopy(self.__dict__)
         output["processor_type"] = self.__class__.__name__
@@ -165,7 +165,7 @@ class ProcessorMixin(PushToHubMixin):
 
         Args:
             json_file_path (`str` or `os.PathLike`):
-                Path to the JSON file in which this image_processor instance's parameters will be saved.
+                Path to the JSON file in which this processor instance's parameters will be saved.
         """
         with open(json_file_path, "w", encoding="utf-8") as writer:
             writer.write(self.to_json_string())
@@ -262,7 +262,7 @@ class ProcessorMixin(PushToHubMixin):
     ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
         """
         From a `pretrained_model_name_or_path`, resolve to a dictionary of parameters, to be used for instantiating a
-        image processor of type [`~image_processor_utils.ImageProcessingMixin`] using `from_dict`.
+        processor of type [`~processing_utils.ProcessingMixin`] using `from_args_and_dict`.
 
         Parameters:
             pretrained_model_name_or_path (`str` or `os.PathLike`):
@@ -272,7 +272,7 @@ class ProcessorMixin(PushToHubMixin):
                 specify the folder name here.
 
         Returns:
-            `Tuple[Dict, Dict]`: The dictionary(ies) that will be used to instantiate the image processor object.
+            `Tuple[Dict, Dict]`: The dictionary(ies) that will be used to instantiate the processor object.
         """
         cache_dir = kwargs.pop("cache_dir", None)
         force_download = kwargs.pop("force_download", False)
@@ -340,14 +340,14 @@ class ProcessorMixin(PushToHubMixin):
             except Exception:
                 # For any other exception, we throw a generic error.
                 raise EnvironmentError(
-                    f"Can't load image processor for '{pretrained_model_name_or_path}'. If you were trying to load"
+                    f"Can't load processor for '{pretrained_model_name_or_path}'. If you were trying to load"
                     " it from 'https://huggingface.co/models', make sure you don't have a local directory with the"
                     f" same name. Otherwise, make sure '{pretrained_model_name_or_path}' is the correct path to a"
                     f" directory containing a {PROCESSOR_NAME} file"
                 )
 
         try:
-            # Load image_processor dict
+            # Load processor dict
             with open(resolved_processor_file, "r", encoding="utf-8") as reader:
                 text = reader.read()
             processor_dict = json.loads(text)
@@ -372,18 +372,18 @@ class ProcessorMixin(PushToHubMixin):
     @classmethod
     def from_args_and_dict(cls, args, processor_dict: Dict[str, Any], **kwargs):
         """
-        Instantiates a type of [`~image_processing_utils.ImageProcessingMixin`] from a Python dictionary of parameters.
+        Instantiates a type of [`~processing_utils.ProcessingMixin`] from a Python dictionary of parameters.
 
         Args:
-            image_processor_dict (`Dict[str, Any]`):
-                Dictionary that will be used to instantiate the image processor object. Such a dictionary can be
+            processor_dict (`Dict[str, Any]`):
+                Dictionary that will be used to instantiate the processor object. Such a dictionary can be
                 retrieved from a pretrained checkpoint by leveraging the
-                [`~image_processing_utils.ImageProcessingMixin.to_dict`] method.
+                [`~processing_utils.ProcessingMixin.to_dict`] method.
             kwargs (`Dict[str, Any]`):
-                Additional parameters from which to initialize the image processor object.
+                Additional parameters from which to initialize the processor object.
 
         Returns:
-            [`~image_processing_utils.ImageProcessingMixin`]: The image processor object instantiated from those
+            [`~processing_utils.ProcessingMixin`]: The processor object instantiated from those
             parameters.
         """
         processor_dict = processor_dict.copy()
@@ -396,7 +396,7 @@ class ProcessorMixin(PushToHubMixin):
 
         processor = cls(*args, **_processor_dict)
 
-        # Update image_processor with kwargs if needed
+        # Update processor with kwargs if needed
         to_remove = []
         for key, value in kwargs.items():
             if hasattr(processor, key):
@@ -405,7 +405,7 @@ class ProcessorMixin(PushToHubMixin):
         for key in to_remove:
             kwargs.pop(key, None)
 
-        logger.info(f"Image processor {processor}")
+        logger.info(f"Processor {processor}")
         if return_unused_kwargs:
             return processor, kwargs
         else:
