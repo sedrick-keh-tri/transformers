@@ -117,6 +117,9 @@ class ProcessorMixin(PushToHubMixin):
             del output["image_processor"]
         if "feature_extractor" in output:
             del output["feature_extractor"]
+        # Some old processor class (for example, `Wav2Vec2Processor`) have this attribute
+        if "current_processor" in output:
+            del output["current_processor"]
 
         return output
 
