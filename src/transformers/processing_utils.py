@@ -123,6 +123,8 @@ class ProcessorMixin(PushToHubMixin):
             del output["current_processor"]
 
         # For `MgpstrProcessor`
+        if "char_tokenizer" in output:
+            del output["char_tokenizer"]
         if "bpe_tokenizer" in output:
             del output["bpe_tokenizer"]
         if "wp_tokenizer" in output:
