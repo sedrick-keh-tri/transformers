@@ -1217,9 +1217,10 @@ class GenerationMixin:
         ...     outputs.sequences, outputs.scores, outputs.beam_indices, normalize_logits=False
         ... )
         >>> # If you sum the generated tokens' scores and apply the length penalty, you'll get the sequence scores.
-        >>> # Tip: recomputing the scores is only guaranteed to match with `normalize_logits=False`. Depending on the
+        >>> # Tip 1: recomputing the scores is only guaranteed to match with `normalize_logits=False`. Depending on the
         >>> # use case, you might want to recompute it with `normalize_logits=True`.
-        >>> output_length = input_length + np.sum(transition_scores.numpy() < 0, axis=1)
+        >>> # Tip 2: the output length does NOT include the input length
+        >>> output_length = np.sum(transition_scores.numpy() < 0, axis=1)
         >>> length_penalty = model.generation_config.length_penalty
         >>> reconstructed_scores = transition_scores.sum(axis=1) / (output_length**length_penalty)
         >>> print(np.allclose(outputs.sequences_scores, reconstructed_scores))
@@ -1389,43 +1390,6 @@ class GenerationMixin:
                     f" the maximum possible length ({generation_config.max_length})." + min_length_error_suffix,
                     UserWarning,
                 )
-
-    def _extend_attention_mask(self, model_kwargs: Dict[str, Any], new_mask_length: int) -> Dict[str, Any]:
-        if self.config.is_encoder_decoder:
-            key = "decoder_attention_mask"
-        else:
-            key = "attention_mask"
-
-        if key not in model_kwargs:
-            return model_kwargs
-
-        mask = model_kwargs[key]
-        mask_extension_length = new_mask_length - mask.shape[1]
-
-        if mask_extension_length < 0:
-            raise ValueError("Cannot extend attention mask to a length less than it already is")
-
-        model_kwargs[key] = torch.cat(
-            [mask, mask.new_ones((mask.shape[0], mask_extension_length))],
-            dim=-1,
-        )
-
-        return model_kwargs
-
-    def _extend_token_type_ids(self, model_kwargs: Dict[str, Any], new_length: int) -> Dict[str, Any]:
-        if "token_type_ids" not in model_kwargs or model_kwargs["token_type_ids"] is None:
-            return model_kwargs
-
-        token_type_ids = model_kwargs["token_type_ids"]
-        final_token_type = token_type_ids[:, -1].unsqueeze(-1)
-        extension_length = new_length - token_type_ids.shape[1]
-        token_type_copies = final_token_type.repeat(1, extension_length)
-        model_kwargs["token_type_ids"] = torch.cat(
-            [model_kwargs["token_type_ids"], token_type_copies],
-            dim=-1,
-        )
-
-        return model_kwargs
 
     @torch.no_grad()
     def generate(
@@ -2837,7 +2801,7 @@ class GenerationMixin:
         if max_length is not None:
             warnings.warn(
                 "`max_length` is deprecated in this function, use"
-                " `stopping_criteria=StoppingCriteriaList(MaxLengthCriteria(max_length=max_length))` instead.",
+                " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
@@ -3116,7 +3080,7 @@ class GenerationMixin:
         if max_length is not None:
             warnings.warn(
                 "`max_length` is deprecated in this function, use"
-                " `stopping_criteria=StoppingCriteriaList(MaxLengthCriteria(max_length=max_length))` instead.",
+                " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
@@ -3458,7 +3422,7 @@ class GenerationMixin:
         if max_length is not None:
             warnings.warn(
                 "`max_length` is deprecated in this function, use"
-                " `stopping_criteria=StoppingCriteriaList(MaxLengthCriteria(max_length=max_length))` instead.",
+                " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
@@ -3786,7 +3750,7 @@ class GenerationMixin:
         if max_length is not None:
             warnings.warn(
                 "`max_length` is deprecated in this function, use"
-                " `stopping_criteria=StoppingCriteriaList(MaxLengthCriteria(max_length=max_length))` instead.",
+                " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
@@ -4176,7 +4140,7 @@ class GenerationMixin:
         if max_length is not None:
             warnings.warn(
                 "`max_length` is deprecated in this function, use"
-                " `stopping_criteria=StoppingCriteriaList(MaxLengthCriteria(max_length=max_length))` instead.",
+                " `stopping_criteria=StoppingCriteriaList([MaxLengthCriteria(max_length=max_length)])` instead.",
                 UserWarning,
             )
             stopping_criteria = validate_stopping_criteria(stopping_criteria, max_length)
@@ -4541,6 +4505,27 @@ class GenerationMixin:
                 model_kwargs["encoder_outputs"].get("hidden_states") if output_hidden_states else None
             )
 
+        # prepare assistant model's keys of inputs
+        assistant_kwargs = copy.copy(model_kwargs)
+        if assistant_model.config.is_encoder_decoder:
+            # both are encoder-decoder
+            input_ids_key = "decoder_input_ids"
+            attention_key = "decoder_attention_mask"
+            assistant_kwargs["encoder_outputs"] = assistant_kwargs.pop("assistant_encoder_outputs")
+        elif "assistant_encoder_outputs" in assistant_kwargs:
+            # special case for encoder-decoder with decoder-only assistant (like DistilWhisper)
+            input_ids_key = "input_ids"
+            attention_key = "attention_mask"
+            assistant_kwargs["attention_mask"] = assistant_kwargs.get(
+                "decoder_attention_mask",
+                torch.ones((input_ids.shape[0], 1), device=input_ids.device, dtype=torch.long),
+            )
+            assistant_kwargs["encoder_outputs"] = assistant_kwargs.pop("assistant_encoder_outputs")
+        else:
+            # both are decoder-only
+            input_ids_key = "input_ids"
+            attention_key = "attention_mask"
+
         # keep track of which sequences are already finished
         unfinished_sequences = input_ids.new(input_ids.shape[0]).fill_(1)
 
@@ -4566,62 +4551,36 @@ class GenerationMixin:
             # `.generate()` call if we decide to add `past_key_values` as a possible output of generate, as we
             # need access to the assistant cache to secure strong speedups.
             candidate_input_ids = input_ids
-            assistant_attention_mask = model_kwargs.get("attention_mask", None)
-            assistant_decoder_attention_mask = model_kwargs.get("decoder_attention_mask", None)
-            assistant_encoder_outputs = (model_kwargs.get("assistant_encoder_outputs", None),)
             for _ in range(int(num_assistant_tokens)):
-                # 1.1. use the assistant model to obtain the next candidate logits
+                # 1.1 prepare assistant model inputs
                 assistant_inputs = assistant_model.prepare_inputs_for_generation(
                     candidate_input_ids,
-                    attention_mask=assistant_attention_mask,
-                    decoder_attention_mask=assistant_decoder_attention_mask,
-                    encoder_outputs=assistant_encoder_outputs,
-                    past_key_values=model_kwargs.get("assistant_past_key_values", None),
+                    **assistant_kwargs,
                 )
-                if assistant_inputs.get("past_key_values", None) is not None:
-                    if assistant_model.config.is_encoder_decoder:
-                        input_ids_len = assistant_inputs["decoder_input_ids"].shape[-1]
-                    else:
-                        input_ids_len = assistant_inputs["input_ids"].shape[-1]
 
-                    if input_ids_len not in (1, 2):
-                        raise ValueError("The length of the input ids in assistant inputs should be 1 or 2")
+                # 1.2. check if the input ids length is correct
+                has_past_key_values = assistant_inputs.get("past_key_values", None) is not None
+                if has_past_key_values and assistant_inputs[input_ids_key].shape[-1] not in (1, 2):
+                    raise ValueError("The length of the input ids in assistant inputs should be 1 or 2")
 
+                # 1.3. use the assistant model to obtain the next candidate logits
                 assistant_model_outputs = assistant_model(**assistant_inputs)
 
-                # 1.2. greedily select the next candidate token
-                model_kwargs["assistant_past_key_values"] = assistant_model_outputs.past_key_values
+                # 1.4. greedily select the next candidate token
                 if len(logits_processor) > 0:
                     assistant_model_outputs.logits[:, -1, :] = logits_processor(
                         candidate_input_ids, assistant_model_outputs.logits[:, -1, :]
                     )
-
                 new_token = assistant_model_outputs.logits[:, -1, :].argmax(dim=-1)
                 candidate_input_ids = torch.cat((candidate_input_ids, new_token[:, None]), dim=-1)
-                if assistant_model.config.is_encoder_decoder and assistant_decoder_attention_mask is not None:
-                    assistant_decoder_attention_mask = torch.cat(
-                        (
-                            assistant_decoder_attention_mask,
-                            torch.ones(
-                                [1, 1],
-                                dtype=assistant_decoder_attention_mask.dtype,
-                                device=assistant_decoder_attention_mask.device,
-                            ),
-                        ),
-                        dim=-1,
-                    )
-                elif not assistant_model.config.is_encoder_decoder and assistant_attention_mask is not None:
-                    assistant_attention_mask = torch.cat(
-                        (
-                            assistant_attention_mask,
-                            torch.ones(
-                                [1, 1], dtype=assistant_attention_mask.dtype, device=assistant_attention_mask.device
-                            ),
-                        ),
-                        dim=-1,
-                    )
 
-                # 1.3. stop assistant generation on EOS
+                # 1.5. update assistant model inputs
+                if assistant_kwargs.get(attention_key, None) is not None:
+                    mask = assistant_kwargs[attention_key]
+                    assistant_kwargs[attention_key] = torch.cat([mask, mask.new_ones((mask.shape[0], 1))], dim=-1)
+                assistant_kwargs["past_key_values"] = assistant_model_outputs.past_key_values
+
+                # 1.6. stop assistant generation on EOS
                 if eos_token_id_tensor is not None:
                     last_assistant_token_is_eos = new_token.tile(eos_token_id_tensor.shape[0], 1)
                     last_assistant_token_is_eos = (
@@ -4640,8 +4599,10 @@ class GenerationMixin:
 
             # 2.1. Prepare the model inputs
             candidate_kwargs = copy.copy(model_kwargs)
-            candidate_kwargs = self._extend_attention_mask(candidate_kwargs, candidate_input_ids.shape[1])
-            candidate_kwargs = self._extend_token_type_ids(candidate_kwargs, candidate_input_ids.shape[1])
+            candidate_kwargs = _prepare_attention_mask(
+                candidate_kwargs, candidate_input_ids.shape[1], self.config.is_encoder_decoder
+            )
+            candidate_kwargs = _prepare_token_type_ids(candidate_kwargs, candidate_input_ids.shape[1])
 
             model_inputs = self.prepare_inputs_for_generation(candidate_input_ids, **candidate_kwargs)
 
@@ -4693,8 +4654,8 @@ class GenerationMixin:
             # 5.3. Discard past key values relative to unused assistant tokens
             new_cache_size = new_cur_len - 1
             outputs.past_key_values = _crop_past_key_values(self, outputs.past_key_values, new_cache_size)
-            model_kwargs["assistant_past_key_values"] = _crop_past_key_values(
-                assistant_model, model_kwargs["assistant_past_key_values"], new_cache_size - 1
+            assistant_kwargs["past_key_values"] = _crop_past_key_values(
+                assistant_model, assistant_kwargs["past_key_values"], new_cache_size - 1
             )  # the assistant does not have the token after the last match, hence the -1
 
             # 6. Adjust the max number of assistant tokens to use in the next iteration. This is a simple heuristic,
@@ -4755,12 +4716,11 @@ class GenerationMixin:
                 outputs, model_kwargs, is_encoder_decoder=self.config.is_encoder_decoder
             )
 
-            # Update attention_mask for the assistant's next round of generations
-            if n_matches > 0 and model_kwargs.get("attention_mask", None) is not None:
-                attention_mask = model_kwargs["attention_mask"]
-                model_kwargs["attention_mask"] = torch.cat(
-                    [attention_mask, attention_mask.new_ones((attention_mask.shape[0], n_matches))], dim=-1
-                )
+            # Update assistant_kwargs for the assistant's next round of generations
+            assistant_kwargs = _prepare_attention_mask(
+                assistant_kwargs, new_cur_len, assistant_model.config.is_encoder_decoder
+            )
+            assistant_kwargs = _prepare_token_type_ids(assistant_kwargs, new_cur_len)
 
             # if eos_token was found in one sentence, set sentence to finished
             if eos_token_id_tensor is not None:
@@ -4939,3 +4899,37 @@ def _ranking_fast(
     contrastive_score = torch.stack(torch.split(contrastive_score, beam_width))  # [B, K]
     _, selected_idx = contrastive_score.max(dim=-1)  # [B]
     return selected_idx
+
+
+def _prepare_attention_mask(model_kwargs: Dict[str, Any], new_length: int, is_encoder_decoder: bool) -> Dict[str, Any]:
+    """Expands or crops the model's mask for decoding purposes, to the defined length"""
+
+    mask_key = "decoder_attention_mask" if is_encoder_decoder else "attention_mask"
+    if mask_key not in model_kwargs:
+        return model_kwargs
+
+    mask = model_kwargs[mask_key]
+    mask_length_diff = new_length - mask.shape[1]
+
+    if mask_length_diff < 0:
+        model_kwargs[mask_key] = mask[:, :mask_length_diff]
+    elif mask_length_diff > 0:
+        model_kwargs[mask_key] = torch.cat([mask, mask.new_ones((mask.shape[0], mask_length_diff))], dim=-1)
+    return model_kwargs
+
+
+def _prepare_token_type_ids(model_kwargs: Dict[str, Any], new_length: int) -> Dict[str, Any]:
+    """Expands or crops the model's token_type_ids for decoding purposes, to the defined length"""
+    if "token_type_ids" not in model_kwargs or model_kwargs["token_type_ids"] is None:
+        return model_kwargs
+
+    token_type_ids = model_kwargs["token_type_ids"]
+    final_token_type = token_type_ids[:, -1].unsqueeze(-1)
+    type_length_diff = new_length - token_type_ids.shape[1]
+
+    if type_length_diff < 0:
+        token_type_ids = token_type_ids[:, :type_length_diff]
+    elif type_length_diff > 0:
+        token_type_copies = final_token_type.repeat(1, type_length_diff)
+        model_kwargs["token_type_ids"] = torch.cat([model_kwargs["token_type_ids"], token_type_copies], dim=-1)
+    return model_kwargs
