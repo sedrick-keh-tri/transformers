@@ -155,6 +155,7 @@ from . import (
     nystromformer,
     oneformer,
     openai,
+    openlm,
     opt,
     owlv2,
     owlvit,
