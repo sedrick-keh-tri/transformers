@@ -129,10 +129,12 @@ class OpenLMAttention(nn.Module):
         use_cache: bool = False,
         **kwargs,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+        assert use_cache
         if "padding_mask" in kwargs:
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
+        hidden_states = hidden_states[:,-1,:].view(hidden_states.shape[0], 1, hidden_states.shape[2])
         batchsize, q_len, _ = hidden_states.shape
         queries, keys, vals = self.in_proj(hidden_states).chunk(3, dim=-1)
 
@@ -149,16 +151,17 @@ class OpenLMAttention(nn.Module):
         if past_key_value is not None and use_cache:
             keys = torch.cat([past_key_value[0], keys], dim=1)
             vals = torch.cat([past_key_value[1], vals], dim=1)
+            queries = torch.cat([past_key_value[2], queries], dim=1)
 
         if use_cache:
-            past_key_value = (keys, vals)
+            past_key_value = (keys, vals, queries)
 
         output = self.attn_fn(
             queries,
             keys,
             vals,
             is_causal=self.is_causal,
-        )
+        )[:, -1, :, :]
         output = output.view(batchsize, q_len, -1)
 
         return self.out_proj(output), output, past_key_value
@@ -393,49 +396,38 @@ class OpenLMModel(OpenLMPreTrainedModel):
 
         # retrieve input_ids and inputs_embeds
         if input_ids is not None and inputs_embeds is not None:
-            raise ValueError("You cannot specify both decoder_input_ids and decoder_inputs_embeds at the same time")
+            raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
         elif input_ids is not None:
-            batch_size, seq_length = input_ids.shape
+            batch_size, seq_length = input_ids.shape[:2]
         elif inputs_embeds is not None:
-            batch_size, seq_length, _ = inputs_embeds.shape
+            batch_size, seq_length = inputs_embeds.shape[:2]
         else:
-            raise ValueError("You have to specify either decoder_input_ids or decoder_inputs_embeds")
+            raise ValueError("You have to specify either input_ids or inputs_embeds")
 
-        seq_length_with_past = seq_length
         past_key_values_length = 0
-
         if past_key_values is not None:
             past_key_values_length = past_key_values[0][0].shape[2]
-            seq_length_with_past = seq_length_with_past + past_key_values_length
 
         if position_ids is None:
             device = input_ids.device if input_ids is not None else inputs_embeds.device
             position_ids = torch.arange(
                 past_key_values_length, seq_length + past_key_values_length, dtype=torch.long, device=device
             )
-            position_ids = position_ids.unsqueeze(0).view(-1, seq_length)
-        else:
-            position_ids = position_ids.view(-1, seq_length).long()
+            position_ids = position_ids.unsqueeze(0)
 
         if inputs_embeds is None:
             inputs_embeds = self.tok_embeddings(input_ids)
 
-        if (
-            attention_mask is not None
-            and hasattr(self.config, "_flash_attn_2_enabled")
-            and self.config._flash_attn_2_enabled
-            and past_key_values is not None
-        ):
-            is_padding_right = attention_mask[:, -1].sum().item() != batch_size
-            if is_padding_right:
-                raise ValueError(
-                    "You are attempting to perform batched generation with padding_side='right'"
-                    " this may lead to unexpected behaviour for Flash Attention version of Mistral. Make sure to "
-                    " call `tokenizer.padding_side  = 'left'` before tokenizing the input. "
-                )
+        if getattr(self.config, "_flash_attn_2_enabled", False):
+            # 2d mask is passed through the layers
+            attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
+        else:
+            # 4d mask is passed through the layers
+            attention_mask = _prepare_4d_causal_attention_mask(
+                attention_mask, (batch_size, seq_length), inputs_embeds, past_key_values_length
+            )
 
-        attention_mask = attention_mask if (attention_mask is not None and 0 in attention_mask) else None
-        
+        # embed positions
         hidden_states = inputs_embeds
 
         if self.gradient_checkpointing and self.training:
