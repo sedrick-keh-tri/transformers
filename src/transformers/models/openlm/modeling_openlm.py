@@ -113,8 +113,8 @@ class OpenLMAttention(nn.Module):
         self.out_proj = nn.Linear(self.num_heads * self.head_dim, self.hidden_size, bias=False)
 
         self.pos_embed = get_pos_embed(config)
-        self.q_norm = nn.Identity()
-        self.k_norm = nn.Identity()
+        self.q_norm = nn.Identity() if not config.qk_norm else LayerNorm(config.hidden_size, eps=config.rms_norm_eps, elementwise_bias=False)
+        self.k_norm = nn.Identity() if not config.qk_norm else LayerNorm(config.hidden_size, eps=config.rms_norm_eps, elementwise_bias=False)
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()

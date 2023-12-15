@@ -120,6 +120,7 @@ class OpenLMConfig(PretrainedConfig):
         rope_theta=10000.0,
         sliding_window=4096,
         attention_dropout=0.0,
+        qk_norm=False,
         **kwargs,
     ):
         self.vocab_size = vocab_size
@@ -141,6 +142,7 @@ class OpenLMConfig(PretrainedConfig):
         self.use_cache = use_cache
         self.rope_theta = rope_theta
         self.attention_dropout = attention_dropout
+        self.qk_norm = qk_norm
 
         super().__init__(
             pad_token_id=pad_token_id,
