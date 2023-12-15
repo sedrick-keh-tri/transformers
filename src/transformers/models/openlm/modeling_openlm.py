@@ -621,6 +621,9 @@ class OpenLMForCausalLM(OpenLMPreTrainedModel):
     def prepare_inputs_for_generation(
         self, input_ids, past_key_values=None, attention_mask=None, inputs_embeds=None, **kwargs
     ):
+        if not past_key_values:
+            for layer in self.model.layers:
+                layer.attention.is_first = True
         # Omit tokens covered by past_key_values
         if past_key_values:
             past_length = past_key_values[0][0].shape[2]
