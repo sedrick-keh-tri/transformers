@@ -22,6 +22,7 @@ logger = logging.get_logger(__name__)
 
 OPENLM_PRETRAINED_CONFIG_ARCHIVE_MAP = {
     "TRI-ML/openlm-1b": "https://huggingface.co/TRI-ML/openlm-1b/blob/main/config.json",
+    "TRI-ML/openlm-7b-code": "https://huggingface.co/TRI-ML/openlm-7b-code/blob/main/config.json",
 }
 
 

@@ -115,6 +115,7 @@ class OpenLMAttention(nn.Module):
         self.pos_embed = get_pos_embed(config)
         self.q_norm = nn.Identity() if not config.qk_norm else LayerNorm(config.hidden_size, eps=config.rms_norm_eps, elementwise_bias=False)
         self.k_norm = nn.Identity() if not config.qk_norm else LayerNorm(config.hidden_size, eps=config.rms_norm_eps, elementwise_bias=False)
+        self.is_first = True
 
     def _shape(self, tensor: torch.Tensor, seq_len: int, bsz: int):
         return tensor.view(bsz, seq_len, self.num_heads, self.head_dim).transpose(1, 2).contiguous()
@@ -134,7 +135,8 @@ class OpenLMAttention(nn.Module):
             warnings.warn(
                 "Passing `padding_mask` is deprecated and will be removed in v4.37. Please make sure use `attention_mask` instead.`"
             )
-        hidden_states = hidden_states[:,-1,:].view(hidden_states.shape[0], 1, hidden_states.shape[2])
+        if not self.is_first:
+            hidden_states = hidden_states[:,-1,:].view(hidden_states.shape[0], 1, hidden_states.shape[2])
         batchsize, q_len, _ = hidden_states.shape
         queries, keys, vals = self.in_proj(hidden_states).chunk(3, dim=-1)
 
@@ -161,7 +163,11 @@ class OpenLMAttention(nn.Module):
             keys,
             vals,
             is_causal=self.is_causal,
-        )[:, -1, :, :]
+        )
+        if not self.is_first:
+            output = output[:, -1, :, :]
+        self.is_first = False
+
         output = output.view(batchsize, q_len, -1)
 
         return self.out_proj(output), output, past_key_value
