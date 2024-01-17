@@ -428,6 +428,8 @@
         title: Nyströmformer
       - local: model_doc/open-llama
         title: Open-Llama
+      - local: model_doc/openlm
+        title: OpenLM
       - local: model_doc/opt
         title: OPT
       - local: model_doc/pegasus

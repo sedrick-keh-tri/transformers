@@ -6064,6 +6064,30 @@ def load_tf_weights_in_openai_gpt(*args, **kwargs):
     requires_backends(load_tf_weights_in_openai_gpt, ["torch"])
 
 
+OPENLM_PRETRAINED_MODEL_ARCHIVE_LIST = None
+
+
+class OpenLMForCausalLM(metaclass=DummyObject):
+    _backends = ["torch"]
+
+    def __init__(self, *args, **kwargs):
+        requires_backends(self, ["torch"])
+
+
+class OpenLMModel(metaclass=DummyObject):
+    _backends = ["torch"]
+
+    def __init__(self, *args, **kwargs):
+        requires_backends(self, ["torch"])
+
+
+class OpenLMPreTrainedModel(metaclass=DummyObject):
+    _backends = ["torch"]
+
+    def __init__(self, *args, **kwargs):
+        requires_backends(self, ["torch"])
+
+
 OPT_PRETRAINED_MODEL_ARCHIVE_LIST = None
 
 
