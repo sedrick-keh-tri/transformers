@@ -42,6 +42,7 @@ from .configuration_openlm import OpenLMConfig
 
 import xformers.ops as xops
 import open_lm
+import open_lm.attention
 import open_lm.norms
 import open_lm.positional_embedding.rotary
 
@@ -51,17 +52,9 @@ logger = logging.get_logger(__name__)
 _CONFIG_FOR_DOC = "OpenLMConfig"
 
 
-def xformers_attn(queries, keys, values, is_causal):
-    # xformers assumes q, k, v are [batch, seq_len, heads, embed_dim]
-    mask = None
-    if is_causal:
-        mask = xops.LowerTriangularMask()
-    return xops.memory_efficient_attention(queries, keys, values, attn_bias=mask)
-
 
 def get_attn_func(config: OpenLMConfig):
-    return xformers_attn
-    # return open_lm.attention.xformers_attn
+    return open_lm.attention.xformers_attn
 
 
 def get_pos_embed(config: OpenLMConfig):
