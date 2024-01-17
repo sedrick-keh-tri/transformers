@@ -654,6 +654,7 @@ _import_structure = {
         "OpenAIGPTConfig",
         "OpenAIGPTTokenizer",
     ],
+    "models.openlm": ["OPENLM_PRETRAINED_CONFIG_ARCHIVE_MAP", "OpenLMConfig"],
     "models.opt": ["OPTConfig"],
     "models.owlv2": [
         "OWLV2_PRETRAINED_CONFIG_ARCHIVE_MAP",
@@ -2799,6 +2800,13 @@ else:
             "OpenAIGPTModel",
             "OpenAIGPTPreTrainedModel",
             "load_tf_weights_in_openai_gpt",
+        ]
+    )
+    _import_structure["models.openlm"].extend(
+        [
+            "OpenLMForCausalLM", 
+            "OpenLMModel", 
+            "OpenLMPreTrainedModel"
         ]
     )
     _import_structure["models.opt"].extend(
@@ -5341,6 +5349,7 @@ if TYPE_CHECKING:
         OpenAIGPTConfig,
         OpenAIGPTTokenizer,
     )
+    from .models.openlm import OPENLM_PRETRAINED_CONFIG_ARCHIVE_MAP, OpenLMConfig
     from .models.opt import OPTConfig
     from .models.owlv2 import (
         OWLV2_PRETRAINED_CONFIG_ARCHIVE_MAP,
@@ -7236,6 +7245,11 @@ if TYPE_CHECKING:
             OpenAIGPTModel,
             OpenAIGPTPreTrainedModel,
             load_tf_weights_in_openai_gpt,
+        )
+        from .models.openlm import (
+            OpenLMForCausalLM,
+            OpenLMModel,
+            OpenLMPreTrainedModel,
         )
         from .models.opt import (
             OPT_PRETRAINED_MODEL_ARCHIVE_LIST,
