@@ -179,6 +179,7 @@ from .utils import (
 )
 from .utils.deprecation import deprecate_kwarg
 from .utils.quantization_config import QuantizationMethod
+from torch.nn.attention import SDPBackend, sdpa_kernel
 
 
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
@@ -3769,7 +3770,8 @@ class Trainer:
             if num_items_in_batch is not None:
                 loss_kwargs["num_items_in_batch"] = num_items_in_batch
             inputs = {**inputs, **loss_kwargs}
-        outputs = model(**inputs)
+        with sdpa_kernel(SDPBackend.CUDNN_ATTENTION):
+            outputs = model(**inputs)
         # Save past state if it exists
         # TODO: this needs to be fixed and made cleaner later.
         if self.args.past_index >= 0:
