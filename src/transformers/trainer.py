@@ -2264,6 +2264,9 @@ class Trainer:
                 self.model = self.accelerator.prepare(self.model)
             self.create_optimizer_and_scheduler(num_training_steps=max_steps)
 
+        if args.torch_compile:
+            model = torch.compile(model, backend="inductor")
+
         # prepare using `accelerator` prepare
         if use_accelerator_prepare:
             self.model.train()
