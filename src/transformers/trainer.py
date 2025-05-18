@@ -2498,7 +2498,7 @@ class Trainer:
                                 )
                             )
 
-                        if grad_norm > 0.01:
+                        if grad_norm > 5.0:
                             model.zero_grad()
                             print("skip-adouchous")
                             logger.info(
