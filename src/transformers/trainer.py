@@ -36,7 +36,6 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, List, Optional, Tuple, Union
 
-
 # Integrations must be imported before ML frameworks:
 # isort: off
 from .integrations import (
@@ -67,10 +66,7 @@ from .integrations.deepspeed import deepspeed_init, deepspeed_load_checkpoint, i
 from .integrations.tpu import tpu_spmd_dataloader
 from .modelcard import TrainingSummary
 from .modeling_utils import PreTrainedModel, load_sharded_checkpoint
-from .models.auto.modeling_auto import (
-    MODEL_FOR_CAUSAL_LM_MAPPING_NAMES,
-    MODEL_MAPPING_NAMES,
-)
+from .models.auto.modeling_auto import MODEL_FOR_CAUSAL_LM_MAPPING_NAMES, MODEL_MAPPING_NAMES
 from .optimization import Adafactor, get_scheduler
 from .processing_utils import ProcessorMixin
 from .pytorch_utils import (
@@ -180,7 +176,6 @@ from .utils import (
 from .utils.deprecation import deprecate_kwarg
 from .utils.quantization_config import QuantizationMethod
 
-
 DEFAULT_CALLBACKS = [DefaultFlowCallback]
 DEFAULT_PROGRESS_CALLBACK = ProgressCallback
 
@@ -227,8 +222,9 @@ if is_peft_available():
 
 
 if is_accelerate_available():
-    from accelerate import Accelerator, skip_first_batches
+    from accelerate import Accelerator
     from accelerate import __version__ as accelerate_version
+    from accelerate import skip_first_batches
     from accelerate.state import AcceleratorState
     from accelerate.utils import (
         DistributedDataParallelKwargs,
@@ -1193,10 +1189,10 @@ class Trainer:
                 for module in opt_model.modules():
                     if isinstance(module, nn.Embedding):
                         skipped += sum({p.data_ptr(): p.numel() for p in module.parameters()}.values())
-                        logger.info(f"skipped {module}: {skipped/2**20}M params")
+                        logger.info(f"skipped {module}: {skipped / 2**20}M params")
                         manager.register_module_override(module, "weight", {"optim_bits": 32})
                         logger.debug(f"bitsandbytes: will optimize {module} in fp32")
-                logger.info(f"skipped: {skipped/2**20}M params")
+                logger.info(f"skipped: {skipped / 2**20}M params")
 
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(self.optimizer)
@@ -1901,10 +1897,7 @@ class Trainer:
             try:
                 from torch_xla.distributed.fsdp import XlaFullyShardedDataParallel as FSDP
                 from torch_xla.distributed.fsdp import checkpoint_module
-                from torch_xla.distributed.fsdp.wrap import (
-                    size_based_auto_wrap_policy,
-                    transformer_auto_wrap_policy,
-                )
+                from torch_xla.distributed.fsdp.wrap import size_based_auto_wrap_policy, transformer_auto_wrap_policy
 
                 if self.is_fsdp_xla_v2_enabled:
                     from torch_xla.experimental.spmd_fully_sharded_data_parallel import (
@@ -2493,6 +2486,36 @@ class Trainer:
                         # Since we perform prefetching, we need to manually set sync_gradients to True
                         self.accelerator.gradient_state._set_sync_gradients(True)
 
+                        # Compute gradient norm
+                        with torch.no_grad():
+                            grad_norm = torch.sqrt(
+                                sum(
+                                    [
+                                        p.grad.norm() ** 2
+                                        for p in model.parameters()
+                                        if p.grad is not None and p.requires_grad
+                                    ]
+                                )
+                            )
+
+                        if grad_norm > 0.01:
+                            model.zero_grad()
+                            print("skip-adouchous")
+                            logger.info(
+                                f"Bad batch, caused a loss spike, skipping it."
+                                f" Global step {self.state.global_step}, epoch {self.state.epoch}"
+                            )
+
+                            self.state.global_step += 1
+
+                            self.state.epoch = epoch + (step + 1 + steps_skipped) / steps_in_epoch
+                            self.control = self.callback_handler.on_step_end(args, self.state, self.control)
+                            self._maybe_log_save_evaluate(
+                                tr_loss, grad_norm, model, trial, epoch, ignore_keys_for_eval
+                            )
+
+                            continue
+
                         # Gradient clipping
                         if args.max_grad_norm is not None and args.max_grad_norm > 0:
                             # deepspeed does its own clipping
@@ -2523,7 +2546,6 @@ class Trainer:
                                 grad_norm = _grad_norm
 
                         self.control = self.callback_handler.on_pre_optimizer_step(args, self.state, self.control)
-
                         self.optimizer.step()
 
                         self.control = self.callback_handler.on_optimizer_step(args, self.state, self.control)
