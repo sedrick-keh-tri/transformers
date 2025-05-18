@@ -2488,7 +2488,7 @@ class Trainer:
 
                         # Compute gradient norm
                         with torch.no_grad():
-                            grad_norm = torch.sqrt(
+                            grad_norm = math.sqrt(
                                 sum(
                                     [
                                         p.grad.norm() ** 2
