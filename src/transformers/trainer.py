@@ -2500,7 +2500,6 @@ class Trainer:
 
                         if grad_norm > 5.0:
                             model.zero_grad()
-                            print("skip-adouchous")
                             logger.info(
                                 f"Bad batch, caused a loss spike, skipping it."
                                 f" Global step {self.state.global_step}, epoch {self.state.epoch}"
